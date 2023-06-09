@@ -122,7 +122,7 @@ def main():
         'summary1': ['Lorem', 'Ipsum', 'Dolor', 'Sit', 'Amet', 'Consectetur'] * 100,
         'summary2': ['Foo', 'Bar', 'Baz', 'Qux', 'Quux', 'Corge'] * 100,
         'label': [0, 1, 2, 3, 4, 5] * 100,
-        'AnnotationStatus': ['M', 'I', 'M', 'M', 'I', 'M'] * 100,
+        'AnnotationStatus': ['', '', '', '', '', ''] * 100,
         'predictedProb': [[0.2, 0.8], [0.6, 0.4], [0.3, 0.7], [0.1, 0.9], [0.5, 0.5], [0.4, 0.6]] * 100,
         'maxProb': [0.8, 0.6, 0.7, 0.9, 0.5, 0.6] * 100
     }
