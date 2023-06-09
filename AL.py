@@ -1,13 +1,16 @@
 import logs
 import numpy as np
 import pandas as pd
+from uncertaintySampling import leastConfidenceSampling,minMarginSampling,entropySampling
 
 label = 'label'
 req1 = 'summary1'
 req2 = 'summary2'
 annStatus = 'AnnotationStatus'
 fields = ['summary1','summary2','dependency','id1', 'id2','label']
-from uncertaintySampling import leastConfidenceSampling,minMarginSampling,entropySampling
+
+SAMPLING_TYPE = 'leastConfidence'
+MANUAL_ANNOTATION_COUNT = 12
 
 def predictLabels(cv,tfidf,clf,df_toBePredictedData):
     '''
@@ -30,7 +33,7 @@ def predictLabels(cv,tfidf,clf,df_toBePredictedData):
     predict_labels = clf.predict(predict_tfidf)
     predict_prob = clf.predict_proba(predict_tfidf)
     
-    logs.writeLog ("\nTotal Labels Predicted : "+ str(len(predict_labels)))
+    #logs.writeLog ("\nTotal Labels Predicted : "+ str(len(predict_labels)))
 
     # contains predicted probs for all labels for each row 
     # so if there are 6 labels it will be like: [0.1, 0.14, 0.19, 0.14, 0.24, 0.19], where total adds to 1.0
@@ -40,7 +43,7 @@ def predictLabels(cv,tfidf,clf,df_toBePredictedData):
     
     return df_toBePredictedData # Returns the unlaballed data with 2 new columns: `predictedProb` and `maxProb`
 
-def analyzePredictions(args,df_predictions):
+def analyzePredictions(df_predictions):
     '''
     Analyzis the predictions, samples the most uncertain data points and queries it from the oracle (original database/file) and updates dataframe accordingly.
     '''
@@ -51,7 +54,7 @@ def analyzePredictions(args,df_predictions):
     threshold = 0.80  # Replace with your desired threshold value
 
     # Filter rows based on the condition
-    df_confident_predictions = df_predictions[df_predictions['maxProb'] > threshold]
+    df_confident_predictions = df_predictions[df_predictions['maxProb'] >= threshold]
 
     # Get the index values of the filtered rows
     confident_indexes = df_confident_predictions.index
@@ -59,23 +62,24 @@ def analyzePredictions(args,df_predictions):
     # Remove the filtered rows from df_predictions
     df_predictions.drop(index=confident_indexes, inplace=True)
     df_predictions.reset_index(drop=True, inplace=True)
-    df_confident_predictions['annStatus'] = 'I'  # Mark all rows as intelligently annotated
+    df_confident_predictions['AnnotationStatus'] = 'I'  # Mark all rows as intelligently annotated
     df_confident_predictions = df_confident_predictions[[req1,req2,label,annStatus]]
+
 
     """Annotate with Active Learning (Manual)""" 
 
-    queryType = args.loc[0,'samplingType']
+    queryType = SAMPLING_TYPE
     df_userAnnot = pd.DataFrame(columns = fields)
     
     for field in [0,1,2,3,4,5]:
         iteration = 0
-        logs.writeLog("\n\nIteration for field: "+str(field))
+        #logs.writeLog("\n\nIteration for field: "+str(field))
         #input("hit enter to proceed")
 
         # This selects `manualAnnotationsCount` (12) uncertain sample for each label, so total = manualAnnotationsCount * len(fields) = 72
-        while iteration<int(args.loc[0,'manualAnnotationsCount']):  #while iteration is less than number of annotations that need to be done.
+        while iteration<int(MANUAL_ANNOTATION_COUNT):  #while iteration is less than number of annotations that need to be done.
             if (len(df_predictions[df_predictions[label]==field ])>0):
-                logs.writeLog("\n\nIteration : "+str(iteration+1))
+                #logs.writeLog("\n\nIteration : "+str(iteration+1))
                 if queryType == 'leastConfidence':
                     indexValue = leastConfidenceSampling(df_predictions[df_predictions[label]==field ])
                 elif queryType == 'minMargin':
@@ -86,9 +90,9 @@ def analyzePredictions(args,df_predictions):
                 # indexValue is the id of the row with the most uncertain sample
 
                 sample = df_predictions.loc[indexValue,:]  # gets the row with the most uncertain sample
-                logs.writeLog("\n\nMost Uncertain Sample : \n"+str(sample))
+                #logs.writeLog("\n\nMost Uncertain Sample : \n"+str(sample))
                 df_userAnnot = df_userAnnot.append({req1:sample[req1],req2:sample[req2],label:sample[label],annStatus:'M'},ignore_index=True)#df_userAnnot.append({'comboId':sample['comboId'],'req1Id':sample['req1Id'],'req1':sample['req1'],req1:sample[req1],'req2Id':sample['req2Id'],'req2':sample['req2'],req2:sample[req2],label:sample[label],annStatus:'M'},ignore_index=True)  #Added AnnotationStatus as M 
-                #logs.createAnnotationsFile(df_userAnnot)
+                ##logs.createAnnotationsFile(df_userAnnot)
                 
                 #Remove the selected sample from the original dataframe
                 df_predictions.drop(index=indexValue,inplace=True)   
@@ -105,8 +109,32 @@ def analyzePredictions(args,df_predictions):
     df_remaining = df_predictions
     df_remaining[annStatus] = ''
     #df_manuallyAnnotated=df_manuallyAnnotated[['comboId','req1Id','req1',req1,'req2Id','req2',req2,label,annStatus]]
-    logs.writeLog("\n\nManually Annotated Combinations... "+str(len(df_predictions))+"Rows \n"+str(df_predictions[:10]))
+    #logs.writeLog("\n\nManually Annotated Combinations... "+str(len(df_predictions))+"Rows \n"+str(df_predictions[:10]))
 
-    df_new_laballed = df_userAnnot + df_confident_predictions
-    
+    df_userAnnot = df_userAnnot[[req1,req2,label,annStatus]]
+    df_new_laballed = pd.concat([df_userAnnot, df_confident_predictions], ignore_index=True, axis=0)
     return df_new_laballed, df_remaining
+
+def main():
+
+    # Generate dummy data
+    data = {
+        'summary1': ['Lorem', 'Ipsum', 'Dolor', 'Sit', 'Amet', 'Consectetur'] * 100,
+        'summary2': ['Foo', 'Bar', 'Baz', 'Qux', 'Quux', 'Corge'] * 100,
+        'label': [0, 1, 2, 3, 4, 5] * 100,
+        'AnnotationStatus': ['M', 'I', 'M', 'M', 'I', 'M'] * 100,
+        'predictedProb': [[0.2, 0.8], [0.6, 0.4], [0.3, 0.7], [0.1, 0.9], [0.5, 0.5], [0.4, 0.6]] * 100,
+        'maxProb': [0.8, 0.6, 0.7, 0.9, 0.5, 0.6] * 100
+    }
+
+    df_predictions = pd.DataFrame(data)
+    a, b = analyzePredictions(df_predictions)
+    print("\n\nNew Labelled: ")
+    print(a)
+    print("\n\nStill To Be Annotated: ")
+    print(b)
+    
+
+
+if __name__ == '__main__':
+    main()
